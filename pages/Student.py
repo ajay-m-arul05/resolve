@@ -1,76 +1,80 @@
 import streamlit as st
 import pandas as pd
-import os
 from datetime import datetime
+import os
 
-# --- Page Configuration ---
-st.set_page_config(
-    page_title="Resolve - College Issue Dashboard",
-    page_icon="🏫",
-    layout="wide"
-)
+# --- Configuration ---
+CSV_FILE = 'issues.csv'
+UPLOAD_FOLDER = 'uploads'
 
 # --- Helper Functions ---
-def initialize_app():
-    """Creates necessary folders and the CSV file if they don't exist."""
-    if not os.path.exists('uploads'):
-        os.makedirs('uploads')
-    if not os.path.exists('solutions'):
-        os.makedirs('solutions')
-
-    if not os.path.exists('issues.csv'):
-        df = pd.DataFrame(columns=[
-            'issue_id', 'title', 'description', 'image_path', 'upvotes',
-            'status', 'submission_date', 'resolved_image_path', 'resolved_description'
-        ])
-        df.to_csv('issues.csv', index=False)
-
 def load_data():
-    """Loads issue data from the CSV file."""
     try:
-        df = pd.read_csv('issues.csv')
+        df = pd.read_csv(CSV_FILE)
     except (FileNotFoundError, pd.errors.EmptyDataError):
         return pd.DataFrame()
     return df
 
 def save_data(df):
-    """Saves the DataFrame to the CSV file."""
-    df.to_csv('issues.csv', index=False)
+    df.to_csv(CSV_FILE, index=False)
 
-# --- App Initialization ---
-initialize_app()
+# --- Page Initialization ---
+st.set_page_config(page_title="Student Dashboard", page_icon="👨‍🎓", layout="wide")
+st.title("👨‍🎓 Student Dashboard")
 if 'upvoted_issues' not in st.session_state:
     st.session_state.upvoted_issues = []
 
+# --- UI Tabs ---
+tab1, tab2 = st.tabs(["**📢 Report a New Issue**", "**📊 View Dashboard**"])
 
-# --- Header and Metrics ---
-st.title("🏫 Resolve: Your Campus Issue Hub")
-st.markdown("Voice your concerns, see real-time progress, and help improve our campus together.")
-
-df = load_data()
-pending_count = len(df[df['status'] == 'Pending'])
-resolved_count = len(df[df['status'] == 'Resolved'])
-total_upvotes = int(df['upvotes'].sum())
-
-col1, col2, col3 = st.columns(3)
-col1.metric("⏳ Pending Issues", pending_count)
-col2.metric("✅ Resolved Issues", resolved_count)
-col3.metric("👍 Total Upvotes", total_upvotes)
-
-st.markdown("---")
-
-
-# --- Main Dashboard with Tabs ---
-tab1, tab2 = st.tabs(["**🔥 Hot Issues (Pending)**", "**✨ Recently Resolved**"])
-
+# --- This is the section to add an issue ---
 with tab1:
-    st.header("Issues Awaiting Action")
+    st.header("Tell Us What Needs Fixing")
+    st.markdown("Your feedback is crucial. Fill out the form below to report an issue.")
+    
+    with st.form("issue_form", clear_on_submit=True):
+        col1, col2 = st.columns(2)
+        with col1:
+            title = st.text_input("📝 **Issue Title**", placeholder="e.g., Broken Window in Library")
+            uploaded_image = st.file_uploader("🖼️ **Upload an Image** (Optional)", type=['png', 'jpg', 'jpeg'])
+        with col2:
+            description = st.text_area("✍️ **Description**", placeholder="Provide details about the location and nature of the issue.", height=200)
+        
+        submitted = st.form_submit_button("Submit Issue", use_container_width=True, type="primary")
+
+        if submitted:
+            if not title or not description:
+                st.warning("Please fill out both the title and description.", icon="⚠️")
+            else:
+                df = load_data()
+                new_id = df['issue_id'].max() + 1 if not df.empty else 1
+                timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                image_path = None
+
+                if uploaded_image is not None:
+                    image_path = os.path.join(UPLOAD_FOLDER, f"issue_{new_id}_{uploaded_image.name}")
+                    with open(image_path, "wb") as f:
+                        f.write(uploaded_image.getbuffer())
+
+                new_issue = pd.DataFrame([{
+                    'issue_id': new_id, 'title': title, 'description': description,
+                    'image_path': image_path, 'upvotes': 0, 'status': 'Pending',
+                    'submission_date': timestamp, 'resolved_image_path': None, 'resolved_description': None
+                }])
+                
+                df = pd.concat([df, new_issue], ignore_index=True)
+                save_data(df)
+                st.success("✅ Issue reported successfully! Thank you for your contribution.", icon="🎉")
+
+# --- This is the section to view the dashboard ---
+with tab2:
+    st.header("Campus Issue Dashboard")
+    df = load_data()
     pending_issues = df[df['status'] == 'Pending'].sort_values(by='upvotes', ascending=False)
     
     if pending_issues.empty:
-        st.info("No pending issues at the moment. Great!")
+        st.info("No pending issues to show.")
     else:
-        # Create a grid of columns
         num_columns = 3
         cols = st.columns(num_columns)
         for i, (index, row) in enumerate(pending_issues.iterrows()):
@@ -80,41 +84,13 @@ with tab1:
                     if pd.notna(row['image_path']) and os.path.exists(row['image_path']):
                         st.image(row['image_path'])
                     
-                    # Upvote section
                     issue_id = row['issue_id']
                     upvote_button_disabled = issue_id in st.session_state.upvoted_issues
                     button_label = "Upvoted ✔️" if upvote_button_disabled else f"{int(row['upvotes'])} Upvote 👍"
                     
-                    if st.button(button_label, key=f"upvote_{issue_id}", use_container_width=True, disabled=upvote_button_disabled):
+                    if st.button(button_label, key=f"student_upvote_{issue_id}", use_container_width=True, disabled=upvote_button_disabled):
                         row_index = df.index[df['issue_id'] == issue_id].tolist()[0]
                         df.loc[row_index, 'upvotes'] += 1
                         save_data(df)
                         st.session_state.upvoted_issues.append(issue_id)
                         st.rerun()
-
-with tab2:
-    st.header("Issues That Have Been Resolved")
-    resolved_issues = df[df['status'] == 'Resolved'].sort_values(by='submission_date', ascending=False)
-
-    if resolved_issues.empty:
-        st.info("No issues have been resolved yet.")
-    else:
-        for index, row in resolved_issues.iterrows():
-            with st.container(border=True):
-                col1, col2 = st.columns([3, 1])
-                with col1:
-                    st.subheader(row['title'])
-                    st.caption(f"Resolved on: {pd.to_datetime(row['submission_date']).strftime('%d %b %Y')}")
-                    with st.expander("Show Details and Solution"):
-                        st.markdown("**Original Issue:**")
-                        st.write(row['description'])
-                        if pd.notna(row['image_path']) and os.path.exists(row['image_path']):
-                            st.image(row['image_path'], caption="Image provided by student")
-                        
-                        st.markdown("---")
-                        st.markdown("**Admin's Solution:**")
-                        st.write(row['resolved_description'])
-                        if pd.notna(row['resolved_image_path']) and os.path.exists(row['resolved_image_path']):
-                            st.image(row['resolved_image_path'], caption="Image of the solution")
-                with col2:
-                    st.success("✅ Resolved", icon="🎉")
