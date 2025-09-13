@@ -39,61 +39,61 @@ def save_data(df):
 
 # --- App Initialization ---
 initialize_app()
-
-# Initialize session state for upvoting to prevent multiple votes per session
 if 'upvoted_issues' not in st.session_state:
     st.session_state.upvoted_issues = []
 
 
-# --- Main Page UI ---
-st.title("🏫 Resolve: College Issue Dashboard")
-st.markdown("A platform to report, track, and resolve campus issues. Upvote the issues that matter most to you!")
+# --- Header and Metrics ---
+st.title("🏫 Resolve: Your Campus Issue Hub")
+st.markdown("Voice your concerns, see real-time progress, and help improve our campus together.")
+
+df = load_data()
+pending_count = len(df[df['status'] == 'Pending'])
+resolved_count = len(df[df['status'] == 'Resolved'])
+total_upvotes = int(df['upvotes'].sum())
+
+col1, col2, col3 = st.columns(3)
+col1.metric("⏳ Pending Issues", pending_count)
+col2.metric("✅ Resolved Issues", resolved_count)
+col3.metric("👍 Total Upvotes", total_upvotes)
+
 st.markdown("---")
 
+
 # --- Main Dashboard with Tabs ---
-tab1, tab2 = st.tabs(["⏳ Pending Issues", "✅ Resolved Issues"])
+tab1, tab2 = st.tabs(["**🔥 Hot Issues (Pending)**", "**✨ Recently Resolved**"])
 
-# Load data once
-df = load_data()
-
-# --- Tab 1: Pending Issues ---
 with tab1:
     st.header("Issues Awaiting Action")
-    
     pending_issues = df[df['status'] == 'Pending'].sort_values(by='upvotes', ascending=False)
     
     if pending_issues.empty:
         st.info("No pending issues at the moment. Great!")
     else:
-        for index, row in pending_issues.iterrows():
-            with st.container(border=True):
-                col1, col2 = st.columns([4, 1])
-                
-                with col1:
-                    st.markdown(f"**{row['title']}**")
-                    st.caption(f"Submitted on: {row['submission_date']}")
+        # Create a grid of columns
+        num_columns = 3
+        cols = st.columns(num_columns)
+        for i, (index, row) in enumerate(pending_issues.iterrows()):
+            with cols[i % num_columns]:
+                with st.container(border=True, height=450):
+                    st.subheader(row['title'])
                     if pd.notna(row['image_path']) and os.path.exists(row['image_path']):
-                        st.image(row['image_path'], width=300)
-                    with st.expander("See Details"):
-                        st.write(row['description'])
-                        
-                with col2:
-                    st.metric(label="Upvotes", value=int(row['upvotes']))
-                    issue_id = row['issue_id']
+                        st.image(row['image_path'])
                     
-                    # Upvote button logic
-                    if st.button("Upvote 👍", key=f"upvote_{issue_id}", disabled=(issue_id in st.session_state.upvoted_issues)):
-                        # Find the index of the row to update
+                    # Upvote section
+                    issue_id = row['issue_id']
+                    upvote_button_disabled = issue_id in st.session_state.upvoted_issues
+                    button_label = "Upvoted ✔️" if upvote_button_disabled else f"{int(row['upvotes'])} Upvote 👍"
+                    
+                    if st.button(button_label, key=f"upvote_{issue_id}", use_container_width=True, disabled=upvote_button_disabled):
                         row_index = df.index[df['issue_id'] == issue_id].tolist()[0]
                         df.loc[row_index, 'upvotes'] += 1
                         save_data(df)
                         st.session_state.upvoted_issues.append(issue_id)
                         st.rerun()
 
-# --- Tab 2: Resolved Issues ---
 with tab2:
     st.header("Issues That Have Been Resolved")
-    
     resolved_issues = df[df['status'] == 'Resolved'].sort_values(by='submission_date', ascending=False)
 
     if resolved_issues.empty:
@@ -101,23 +101,20 @@ with tab2:
     else:
         for index, row in resolved_issues.iterrows():
             with st.container(border=True):
-                st.markdown(f"**{row['title']}**")
-                st.caption(f"Submitted on: {row['submission_date']}")
-                st.success("Status: Resolved")
-                
-                with st.expander("View Details and Solution"):
-                    # Original Issue
-                    st.markdown("**Original Issue:**")
-                    st.write(row['description'])
-                    if pd.notna(row['image_path']) and os.path.exists(row['image_path']):
-                        st.image(row['image_path'], caption="Image provided by student")
-                    
-                    st.markdown("---")
-                    
-                    # Admin's Solution
-                    st.markdown("**Admin's Solution:**")
-                    st.write(row['resolved_description'])
-                    if pd.notna(row['resolved_image_path']) and os.path.exists(row['resolved_image_path']):
-                        st.image(row['resolved_image_path'], caption="Image of the solution")
-
-st.sidebar.success("Select a page above to begin.")
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.subheader(row['title'])
+                    st.caption(f"Resolved on: {pd.to_datetime(row['submission_date']).strftime('%d %b %Y')}")
+                    with st.expander("Show Details and Solution"):
+                        st.markdown("**Original Issue:**")
+                        st.write(row['description'])
+                        if pd.notna(row['image_path']) and os.path.exists(row['image_path']):
+                            st.image(row['image_path'], caption="Image provided by student")
+                        
+                        st.markdown("---")
+                        st.markdown("**Admin's Solution:**")
+                        st.write(row['resolved_description'])
+                        if pd.notna(row['resolved_image_path']) and os.path.exists(row['resolved_image_path']):
+                            st.image(row['resolved_image_path'], caption="Image of the solution")
+                with col2:
+                    st.success("✅ Resolved", icon="🎉")
