@@ -5,7 +5,7 @@ from datetime import datetime
 
 # --- Page Configuration ---
 st.set_page_config(
-    page_title="Resolve - College Issue Dashboard",
+    page_title="Resolve ",
     page_icon="🏫",
     layout="wide"
 )
